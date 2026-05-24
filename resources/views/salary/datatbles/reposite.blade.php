@@ -1,0 +1,1 @@
+{{Form::select('reposite_id',\App\Models\Reposite::orderby('priority')->pluck('name','id'),$reposite_id,['class'=>'form-control','id'=>'reposite_id_'.$id])}}

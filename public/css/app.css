@@ -1,0 +1,44 @@
+.buoyConfir{
+    display: none !important;
+} 
+body{
+    font-family: 'Cairo', sans-serif;
+}
+.box-btn {
+    margin: 10px 0;
+}
+.operations{
+    width:100px;
+}
+.operations .btn{
+    margin: 5px auto;
+}
+.to-fade{
+    display: none;
+}
+
+/* .dropdown-menu {
+    right: auto  !important;
+} */
+.btn {
+    margin: 5px 0;
+}
+@media  (min-width:1200px){
+    .table-responsive {
+        overflow-x:unset;
+    }
+}
+.jconfirm .jconfirm-box 
+div.jconfirm-content-pane 
+.jconfirm-content {
+    overflow: unset;
+}
+.user-panel > .image > img {
+    height: 45px !important;
+}
+
+.sphinxat {
+    width: 40px;
+    height: 40px;
+    margin-left: 20px;
+}
