@@ -3,13 +3,11 @@
 namespace App\Console;
 
 use App\Console\Commands\DailyAttend;
-use Illuminate\Console\Scheduling\Schedule;
-use Illuminate\Foundation\Console\Kernel as ConsoleKernel;
 use App\Console\Commands\toOperate;
 use App\Console\Commands\toReoperate;
 use App\Console\Commands\UpdateTransactions;
-use App\Models\AttendanceSettings;
-use Carbon\Carbon;
+use Illuminate\Console\Scheduling\Schedule;
+use Illuminate\Foundation\Console\Kernel as ConsoleKernel;
 
 class Kernel extends ConsoleKernel
 {
@@ -19,9 +17,10 @@ class Kernel extends ConsoleKernel
      * @var array
      */
     protected $commands = [
-        toOperate::class,
-        toReoperate::class,
-        UpdateTransactions::class,
+        DailyAttend::class,
+        // toOperate::class,
+        // toReoperate::class,
+        // UpdateTransactions::class,
     ];
 
     /**
@@ -32,14 +31,10 @@ class Kernel extends ConsoleKernel
      */
     protected function schedule(Schedule $schedule)
     {
-        // $schedule->command('cron')->everyMinute();
         $schedule->command(DailyAttend::class)->everyMinute()->withoutOverlapping();
-
-        $schedule->command(toOperate::class)->everyMinute()->withoutOverlapping();
-        $schedule->command(toReoperate::class)->everyMinute()->withoutOverlapping();
-
-        
-
+        // $schedule->command('cron')->everyMinute();
+        // $schedule->command(toOperate::class)->everyMinute()->withoutOverlapping();
+        // $schedule->command(toReoperate::class)->everyMinute()->withoutOverlapping();
     }
 
     /**
@@ -49,7 +44,7 @@ class Kernel extends ConsoleKernel
      */
     protected function commands()
     {
-        $this->load(__DIR__.'/Commands');
+        $this->load(__DIR__ . '/Commands');
 
         require base_path('routes/console.php');
     }
