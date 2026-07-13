@@ -2,19 +2,16 @@
 
 namespace App\Console\Commands;
 
+use Carbon\Carbon;
+use App\Models\Employee;
 use App\Models\Attendance;
 use App\Models\AttendanceSettings;
 use Illuminate\Console\Command;
-
-use App\Models\Detail;
-use App\Models\Employee;
-use DB;
- 
-use Carbon\Carbon;
+use Illuminate\Support\Facades\Log;
 
 class DailyAttend extends Command
 {
-   /**
+    /**
      * The name and signature of the console command.
      *
      * @var string
@@ -45,33 +42,47 @@ class DailyAttend extends Command
      */
     public function handle()
     {
-        
-        $time='';
-        if(AttendanceSettings::count() > 0){
+        Log::info('Daily Attend command started.');
+
+        if (AttendanceSettings::exists()) {
             $time = AttendanceSettings::first()->end_permited_attend_time;
             $settingTime = Carbon::parse($time)->format('H:i:s');
             $timeNow = Carbon::now()->format('H:i:s');
             $today = new Carbon();
 
-            if($timeNow > $settingTime && $today->dayOfWeek != Carbon::FRIDAY){
+            Log::info('Attendance settings loaded.', ['setting_time' => $settingTime, 'current_time' => $timeNow]);
+
+            if ($timeNow > $settingTime && $today->dayOfWeek != Carbon::FRIDAY) {
                 $dateNow = Carbon::now()->format('Y-m-d');
                 $employees = Employee::where('active', 1)->get();
-        
+
+                Log::info('Processing employees.', ['employees_count' => $employees->count(), 'date' => $dateNow]);
+
+                $absenceCount = 0;
                 foreach ($employees as $employee) {
-                    $empAttend = Attendance::where('date', $dateNow)->where('employee_id', $employee->id)->first();
-                    if(!$empAttend){
-                        Attendance::create([
-                            'date' => $dateNow,
-                            'employee_id' => $employee->id,
-                            'absence' => 1,
-                        ]);
+                    $empAttend = Attendance::where('date', $dateNow)
+                                            ->where('employee_id', $employee->id)
+                                            ->first();
+
+                    if (empty($empAttend)) {
+                        $attend = new Attendance();
+                        $attend->absence = 1;
+                        $attend->date = $dateNow;
+                        $attend->employee_id = $employee->id;
+                        $attend->save();
+
+                        $absenceCount++;
                     }
                 }
-            }
-        }else{
-            $time = '13:00';
-        }
-        
 
+                Log::info('Daily Attend completed.', ['absence_records_created' => $absenceCount]);
+            } else {
+                Log::info('DailyAttend skipped.', ['reason' => 'Current time not reached or today is Friday', 'current_time' => $timeNow, 'setting_time' => $settingTime, 'day' => $today->dayOfWeek]);
+            }
+        } else {
+            Log::warning('Attendance settings not found.');
+        }
+
+        return 0;
     }
 }
