@@ -1,4 +1,11 @@
 <ul  class="sidebar-menu"  data-widget="tree">
+    @if(auth()->user()->hasRole('admin'))
+        <li class="{{request()->is('dashboard')?'active':''}}">
+            <a href="{{route('dashboard')}}">
+                <i class="fa fa-dashboard"></i> <span>لوحة الإحصائيات</span>
+            </a>
+        </li>
+    @endif
     <li class="header"> العناصر الاساسية</li>
     @if(auth()->user()->hasRole('admin') || auth()->user()->hasRole('branch_factor_respons') || auth()->user()->hasRole('safe_factor_response') || auth()->user()->hasRole('factor_response') || auth()->user()->can('system_factor'))
         <li>
