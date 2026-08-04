@@ -2165,52 +2165,55 @@ private function netStockMovement(array $itemIds, array $storeIds, $from, $to) {
     }
 
     // --- Factory ----------------------------------------------------------
-    $opIds = DB::table('operation_orders')
-        ->whereBetween('date', [$from, $to])
+    // Everything below joins operation_orders and filters on its date/store
+    // directly. Collecting ids with pluck() and feeding them to whereIn()
+    // degrades badly once the window is long — and the opening balance always
+    // asks for "from-date .. today", so a long window is the normal case.
+
+    // Raw material consumed. Mirrors the display loop: prefer the result row's
+    // old_item_quantity when it is set and non-zero, else the detail's own.
+    // The latest result per detail is resolved with one GROUP BY pass plus a
+    // join on the winning id. The correlated `WHERE id = (SELECT MAX(id) ...
+    // WHERE order_details_id = r1.order_details_id)` form re-runs for every one
+    // of the ~13.5k result rows and measured 38s on its own.
+    $net -= (float) DB::table('operation_order_details as d')
+        ->join('operation_orders as oo', 'oo.id', '=', 'd.operation_order_id')
+        ->leftJoin(DB::raw('(SELECT res.order_details_id, res.old_item_quantity
+                               FROM operation_order_results res
+                               JOIN (SELECT order_details_id, MAX(id) AS mx
+                                       FROM operation_order_results
+                                      GROUP BY order_details_id) pick
+                                 ON pick.mx = res.id) as r'),
+                  'r.order_details_id', '=', 'd.id')
+        ->whereBetween('oo.date', [$from, $to])
         ->when($hasStores, function ($q) use ($storeIds) {
-            return $q->whereIn('store_id', $storeIds);
+            return $q->whereIn('oo.store_id', $storeIds);
         })
-        ->pluck('id')->toArray();
+        ->whereIn('d.item_id', $itemIds)
+        ->sum(DB::raw('COALESCE(NULLIF(r.old_item_quantity, 0), d.old_item_quantity)'));
 
-    if (count($opIds)) {
-        // Raw material consumed. Mirrors the display loop: prefer the result row's
-        // old_item_quantity when it is set and non-zero, else the detail's own.
-        $net -= (float) DB::table('operation_order_details as d')
-            ->leftJoin(DB::raw('(SELECT r1.order_details_id, r1.old_item_quantity
-                                   FROM operation_order_results r1
-                                  WHERE r1.id = (SELECT MAX(r2.id)
-                                                   FROM operation_order_results r2
-                                                  WHERE r2.order_details_id = r1.order_details_id)) as r'),
-                      'r.order_details_id', '=', 'd.id')
-            ->whereIn('d.operation_order_id', $opIds)
-            ->whereIn('d.item_id', $itemIds)
-            ->sum(DB::raw('COALESCE(NULLIF(r.old_item_quantity, 0), d.old_item_quantity)'));
+    // Finished output produced for these items.
+    $net += (float) DB::table('operation_order_results as r')
+        ->join('operation_order_details as d', 'd.id', '=', 'r.order_details_id')
+        ->join('operation_orders as oo', 'oo.id', '=', 'd.operation_order_id')
+        ->whereBetween('oo.date', [$from, $to])
+        ->when($hasStores, function ($q) use ($storeIds) {
+            return $q->whereIn('oo.store_id', $storeIds);
+        })
+        ->whereIn('d.out_item_id', $itemIds)
+        ->sum('r.actual_output');
 
-        // Finished output produced for these items.
-        $outDetailIds = DB::table('operation_order_details')
-            ->whereIn('operation_order_id', $opIds)
-            ->whereIn('out_item_id', $itemIds)
-            ->pluck('id')->toArray();
-
-        if (count($outDetailIds)) {
-            $net += (float) DB::table('operation_order_results')
-                ->whereIn('order_details_id', $outDetailIds)
-                ->sum('actual_output');
-        }
-
-        // Scrap (خردة) and offcuts (الفضل) both leave the store.
-        $inDetailIds = DB::table('operation_order_details')
-            ->whereIn('operation_order_id', $opIds)
-            ->whereIn('item_id', $itemIds)
-            ->pluck('id')->toArray();
-
-        if (count($inDetailIds)) {
-            $net -= (float) DB::table('operation_order_result_details')
-                ->whereIn('order_details_id', $inDetailIds)
-                ->whereIn('damage_type', ['scrap', 'pieces'])
-                ->sum('damage_weight');
-        }
-    }
+    // Scrap (خردة) and offcuts (الفضل) both leave the store.
+    $net -= (float) DB::table('operation_order_result_details as rd')
+        ->join('operation_order_details as d', 'd.id', '=', 'rd.order_details_id')
+        ->join('operation_orders as oo', 'oo.id', '=', 'd.operation_order_id')
+        ->whereBetween('oo.date', [$from, $to])
+        ->when($hasStores, function ($q) use ($storeIds) {
+            return $q->whereIn('oo.store_id', $storeIds);
+        })
+        ->whereIn('d.item_id', $itemIds)
+        ->whereIn('rd.damage_type', ['scrap', 'pieces'])
+        ->sum('rd.damage_weight');
 
     return $net;
 }

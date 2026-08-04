@@ -529,6 +529,10 @@ Route::group(['middleware' => ['auth']], function () {
             'as' => 'reports.supplier-accounts'
         ]);
     });
+    Route::get('dashboard', [
+        'uses' => 'DashboardController@index',
+        'as' => 'dashboard'
+    ]);
     Route::group(['prefix' => 'home', 'as' => 'home'], function () {
         Route::get('', [
             'uses' => 'HomeController@index',
