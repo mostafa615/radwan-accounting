@@ -788,7 +788,7 @@ class ReportsController extends Controller {
 
                         ->whereHas('order', function ($q) use ($request) {
 
-                            $q->whereBetween('date', [$request->date_from, $request->date_to])
+                            $q->whereBetween('date2', [$request->date_from, $request->date_to])
 
                             ->where('is_return', 0)
 
@@ -810,7 +810,7 @@ class ReportsController extends Controller {
 
                         ->whereHas('order', function ($q) use ($request) {
 
-                            $q->whereBetween('date', [$request->date_from, $request->date_to]);
+                            $q->whereBetween('date2', [$request->date_from, $request->date_to]);
 
                             $q->where('is_return', true);
 
@@ -838,7 +838,7 @@ class ReportsController extends Controller {
 
                         ->whereHas('order', function ($q) use ($request) {
 
-                            $q->whereBetween('date', [$request->date_from, $request->date_to])
+                            $q->whereBetween('date2', [$request->date_from, $request->date_to])
 
                             ->where('is_return', 0)
 
@@ -862,7 +862,7 @@ class ReportsController extends Controller {
 
                         ->whereHas('order', function ($q) use ($request) {
 
-                            $q->whereBetween('date', [$request->date_from, $request->date_to])
+                            $q->whereBetween('date2', [$request->date_from, $request->date_to])
 
                             ->where('is_return', 1)
 
@@ -2104,6 +2104,117 @@ class ReportsController extends Controller {
     // }
     
     // New
+/**
+ * Net signed stock movement for the given items/stores between two dates (inclusive).
+ *
+ * Signs match the report body exactly, so that
+ *     opening + netStockMovement(from, to) == closing
+ * always holds:
+ *   sale (in, not return)          -> stock decreases
+ *   purchase (out, not return)     -> stock increases
+ *   return from client (out, ret)  -> stock increases
+ *   return to supplier (in, ret)   -> stock decreases
+ *   transfer out / in              -> decreases / increases
+ *   consumed by factory, scrap, offcuts -> decreases
+ *   produced by factory            -> increases
+ *
+ * Aggregated in SQL on purpose: the range can span years, and we must never
+ * load the rows just to add up their quantities.
+ */
+private function netStockMovement(array $itemIds, array $storeIds, $from, $to) {
+    if (empty($itemIds)) return 0.0;
+    $hasStores = !empty($storeIds);
+    $net = 0.0;
+
+    // --- Invoices ---------------------------------------------------------
+    $orderRows = DB::table('order_details as od')
+        ->join('orders as o', 'o.id', '=', 'od.order_id')
+        ->whereIn('od.item_id', $itemIds)
+        ->whereBetween('o.date2', [$from, $to])
+        ->when($hasStores, function ($q) use ($storeIds) {
+            return $q->whereIn('od.store_id', $storeIds);
+        })
+        ->groupBy('o.type', 'o.is_return')
+        ->select('o.type', 'o.is_return', DB::raw('SUM(od.quantity) as qty'))
+        ->get();
+
+    foreach ($orderRows as $r) {
+        $qty = (float) $r->qty;
+        if ($r->type == 'out') {
+            $net += $qty;               // purchase, or return from client
+        } else {
+            $net -= $qty;               // sale, or return to supplier
+        }
+    }
+
+    // --- Transfers between stores ----------------------------------------
+    if ($hasStores) {
+        $net -= (float) DB::table('load_details as ld')
+            ->join('loads as l', 'l.id', '=', 'ld.load_id')
+            ->whereIn('ld.item_id', $itemIds)
+            ->whereIn('l.from_id', $storeIds)
+            ->whereBetween('l.date', [$from, $to])
+            ->sum('ld.quantity');
+
+        $net += (float) DB::table('load_details as ld')
+            ->join('loads as l', 'l.id', '=', 'ld.load_id')
+            ->whereIn('ld.item_id', $itemIds)
+            ->whereIn('l.to_id', $storeIds)
+            ->whereBetween('l.date', [$from, $to])
+            ->sum('ld.quantity');
+    }
+
+    // --- Factory ----------------------------------------------------------
+    $opIds = DB::table('operation_orders')
+        ->whereBetween('date', [$from, $to])
+        ->when($hasStores, function ($q) use ($storeIds) {
+            return $q->whereIn('store_id', $storeIds);
+        })
+        ->pluck('id')->toArray();
+
+    if (count($opIds)) {
+        // Raw material consumed. Mirrors the display loop: prefer the result row's
+        // old_item_quantity when it is set and non-zero, else the detail's own.
+        $net -= (float) DB::table('operation_order_details as d')
+            ->leftJoin(DB::raw('(SELECT r1.order_details_id, r1.old_item_quantity
+                                   FROM operation_order_results r1
+                                  WHERE r1.id = (SELECT MAX(r2.id)
+                                                   FROM operation_order_results r2
+                                                  WHERE r2.order_details_id = r1.order_details_id)) as r'),
+                      'r.order_details_id', '=', 'd.id')
+            ->whereIn('d.operation_order_id', $opIds)
+            ->whereIn('d.item_id', $itemIds)
+            ->sum(DB::raw('COALESCE(NULLIF(r.old_item_quantity, 0), d.old_item_quantity)'));
+
+        // Finished output produced for these items.
+        $outDetailIds = DB::table('operation_order_details')
+            ->whereIn('operation_order_id', $opIds)
+            ->whereIn('out_item_id', $itemIds)
+            ->pluck('id')->toArray();
+
+        if (count($outDetailIds)) {
+            $net += (float) DB::table('operation_order_results')
+                ->whereIn('order_details_id', $outDetailIds)
+                ->sum('actual_output');
+        }
+
+        // Scrap (خردة) and offcuts (الفضل) both leave the store.
+        $inDetailIds = DB::table('operation_order_details')
+            ->whereIn('operation_order_id', $opIds)
+            ->whereIn('item_id', $itemIds)
+            ->pluck('id')->toArray();
+
+        if (count($inDetailIds)) {
+            $net -= (float) DB::table('operation_order_result_details')
+                ->whereIn('order_details_id', $inDetailIds)
+                ->whereIn('damage_type', ['scrap', 'pieces'])
+                ->sum('damage_weight');
+        }
+    }
+
+    return $net;
+}
+
 public function item_movements_report(Request $request) {
     // 1. INCREASE MEMORY LIMIT TEMPORARILY
     // This script handles heavy data, so we request more RAM just for this execution.
@@ -2117,12 +2228,10 @@ public function item_movements_report(Request $request) {
     ]);
 
     // --- Date Logic ---
-    if($request->date_from < '2025-12-26'){
-        $startDateStr = '2025-12-22';
-    } else {
-        $startDateStr = $request->date_from;
-    }
-    $request->merge(['date_from' => $startDateStr]);
+    // Use the requested from-date as given. (Previously this silently rewrote any
+    // date_from earlier than 2025-12-26 to 2025-12-22, so historical searches
+    // returned a date range the user never asked for.)
+    $startDateStr = $request->date_from;
     
     $reqStoreIds = $request->stores_id;
     $hasStores = ($request->has('stores_id') && !empty($reqStoreIds));
@@ -2148,7 +2257,10 @@ public function item_movements_report(Request $request) {
         ->where($storeFilter)
         ->whereIn('item_id', $reqItems)
         ->whereHas('order', function ($q) use ($fromDate, $toDate) {
-            $q->whereBetween('date', [$fromDate, $toDate]);
+            // Filter on date2 (DATE), not date (DATETIME): comparing a DATETIME
+            // against a bare 'Y-m-d' end bound truncates it to 00:00:00 and drops
+            // every movement recorded on the final day.
+            $q->whereBetween('date2', [$fromDate, $toDate]);
         })
         ->get();
 
@@ -2183,36 +2295,10 @@ public function item_movements_report(Request $request) {
     });
 
 
-    // =========================================================================
-    // STEP 2: FETCH "ALL TIME" DATA (The Memory heavy part)
-    // We execute these separately to avoid holding 1 massive object.
-    // We use select() to minimize footprint.
-    // =========================================================================
-
-    // NOTE: If these "$coll_" variables are just used for totals, use ->count() or ->sum(). 
-    // Assuming you need the list for the view, we fetch them with strict SQL filters.
-
-    $coll_base = OrderDetail::with(['order' => function($q) {
-        $q->select('id', 'date', 'is_return', 'type', 'ownerable_id', 'ownerable_type');
-    }, 'order.ownerable', 'item:id,name'])->where($storeFilter)->whereIn('item_id', $reqItems);
-
-    // We must clone the query for each type to avoid memory leaks from one massive collection
-    $coll_orders_in = (clone $coll_base)->whereHas('order', fn($q) => $q->where('is_return', 0)->where('type', 'in'))->get();
-    $coll_orders_out = (clone $coll_base)->whereHas('order', fn($q) => $q->where('is_return', 0)->where('type', 'out'))->get();
-    $coll_orders_in_return = (clone $coll_base)->whereHas('order', fn($q) => $q->where('is_return', 1)->where('type', 'out'))->get();
-    $coll_orders_out_return = (clone $coll_base)->whereHas('order', fn($q) => $q->where('is_return', 1)->where('type', 'in'))->get();
-
-    // Loads Coll
-    $loads_base = LoadDetail::with(['parent', 'item:id,name'])->whereIn('item_id', $reqItems);
-    
-    $coll_loads_from = (clone $loads_base)->whereHas('parent', function($q) use ($hasStores, $reqStoreIds) {
-        if($hasStores) $q->whereIn('from_id', $reqStoreIds);
-    })->get();
-    
-    $coll_loads_to = (clone $loads_base)->whereHas('parent', function($q) use ($hasStores, $reqStoreIds) {
-        if($hasStores) $q->whereIn('to_id', $reqStoreIds);
-    })->get();
-
+    // NOTE: The six "$coll_*" all-time collections that used to be built here were
+    // passed to the view but never rendered by it. Each one loaded the item's entire
+    // history (tens of thousands of order_details rows with eager-loaded relations),
+    // which is what forced the 512M memory_limit and 300s time limit above.
 
     // =========================================================================
     // STEP 3: FACTORY DATA (Optimized: No N+1 Loop Queries)
@@ -2250,19 +2336,7 @@ public function item_movements_report(Request $request) {
         ->whereIn('order_details_id', $in_item_details_ids)
         ->where('damage_type', 'pieces')->get();
 
-    // 3. MAP DATES (The Key Performance Fix)
-    // Instead of querying DB inside the loop, we create a lookup array
-    $opOrdersDates = DB::table('operation_orders')
-        ->whereIn('id', $operation_order_ids)
-        ->pluck('date', 'id'); // [id => date]
-
-    // We also need a map for Results -> Operation Order ID
-    // Since from_factory uses `order_details_id`, we need to map Detail ID -> Op Order ID
-    $detailToOpOrderMap = DB::table('operation_order_details')
-        ->whereIn('id', array_merge($out_item_details_ids, $in_item_details_ids))
-        ->pluck('operation_order_id', 'id');
-
-    // Also map Results to Old Quantity for the input loop
+    // Map Results to Old Quantity for the input loop
     $resultsMap = DB::table('operation_order_results')
         ->whereIn('order_details_id', $to_factory->pluck('id')->toArray())
         ->get()->keyBy('order_details_id');
@@ -2272,24 +2346,18 @@ public function item_movements_report(Request $request) {
     // STEP 4: CALCULATIONS (Pure Memory, No DB access)
     // =========================================================================
 
-    $init_quantity = NewQuantities::whereIn('branch_id', $reqStoreIds)
+    // Live stock for the selected item(s)/store(s), as it stands right now.
+    $liveStock = (float) Quantity::where('ownerable_type', 'App\Models\Store')
+        ->whereIn('ownerable_id', $reqStoreIds)
         ->whereIn('item_id', $reqItems)
         ->sum('quantity');
 
-    $todayMovements = 0;
     $rangeMovements = 0;
 
     // Helper closure to avoid repeating loop code
-    $calc = function($collection, $sign, $isDateKey = 'order') use (&$rangeMovements, &$todayMovements, $startDateStr) {
+    $calc = function($collection, $sign) use (&$rangeMovements) {
         foreach($collection as $item) {
-            $qty = floatval($item->quantity);
-            $rangeMovements += ($qty * $sign); // Add or Subtract based on sign
-            
-            // Safe date access (Relations are eager loaded)
-            $d = ($isDateKey == 'parent') ? $item->parent->date : $item->order->date;
-            if($d == $startDateStr) {
-                $todayMovements += ($qty * $sign);
-            }
+            $rangeMovements += (floatval($item->quantity) * $sign);
         }
     };
 
@@ -2298,74 +2366,61 @@ public function item_movements_report(Request $request) {
     $calc($orders_out, 1);
     $calc($orders_in_return, 1);
     $calc($orders_out_return, -1);
-    $calc($loads_from, -1, 'parent');
-    $calc($loads_to, 1, 'parent');
+    $calc($loads_from, -1);
+    $calc($loads_to, 1);
 
     // Factory Loops (Using Maps)
     foreach($to_factory as $item) {
         // Resolve Qty
         $res = $resultsMap[$item->id] ?? null;
         $qty = $res ? (floatval($res->old_item_quantity) ?: floatval($item->old_item_quantity)) : floatval($item->old_item_quantity);
-        
         $rangeMovements -= $qty;
-        
-        // Resolve Date
-        $date = $opOrdersDates[$item->operation_order_id] ?? null;
-        if($date == $startDateStr) $todayMovements -= $qty;
     }
 
     foreach($from_factory as $item) {
-        $qty = floatval($item->actual_output);
-        $rangeMovements += $qty;
-        
-        // Find Op Order Date: Result -> Detail -> OpOrder -> Date
-        $opId = $detailToOpOrderMap[$item->order_details_id] ?? null;
-        $date = $opId ? ($opOrdersDates[$opId] ?? null) : null;
-        
-        if($date == $startDateStr) $todayMovements += $qty;
+        $rangeMovements += floatval($item->actual_output);
     }
 
     foreach($scrap_factory as $item) {
-        $qty = floatval($item->damage_weight);
-        $rangeMovements -= $qty;
-        
-        $opId = $detailToOpOrderMap[$item->order_details_id] ?? null;
-        $date = $opId ? ($opOrdersDates[$opId] ?? null) : null;
-        if($date == $startDateStr) $todayMovements -= $qty;
+        $rangeMovements -= floatval($item->damage_weight);
     }
 
     foreach($pieces_factory as $item) {
-        $qty = floatval($item->damage_weight);
-        $rangeMovements -= $qty;
-        
-        $opId = $detailToOpOrderMap[$item->order_details_id] ?? null;
-        $date = $opId ? ($opOrdersDates[$opId] ?? null) : null;
-        if($date == $startDateStr) $todayMovements -= $qty;
+        $rangeMovements -= floatval($item->damage_weight);
     }
 
-    $openingBalance = $init_quantity - $todayMovements;
-    
+    // --- Opening balance (رصيد أول المدة) --------------------------------
+    // The true stock the item had at the START of the selected period: take the
+    // live stock and unwind everything that moved on/after the from-date.
+    // Derived rather than read from a stored snapshot, so it is correct for any
+    // date the user picks and self-corrects as stock changes.
+    $today = Carbon::now()->format('Y-m-d');
+    $movementsSinceStart = $this->netStockMovement($reqItems, $reqStoreIds, $startDateStr, $today);
+    $openingBalance = $liveStock - $movementsSinceStart;
+
+    // Closing balance at the end of the selected period (رصيد آخر المدة).
+    $balanceAtDateTo = $openingBalance + $rangeMovements;
+
     // Resources Query
     $resources = Quantity::with('item')
         ->where('ownerable_type', 'App\Models\Store')
         ->whereIn('ownerable_id', $reqStoreIds)
         ->whereIn('item_id', $reqItems)->get();
 
-    $balanceAtDateTo = (count($resources) == 1) ? ($openingBalance + $rangeMovements) : null;
-    
     $previousDate = Carbon::parse($request->date_from)->subDay()->format('Y-m-d');
+    $periodFrom = Carbon::parse($request->date_from)->format('Y-m-d');
+    $periodTo = Carbon::parse($request->date_to)->format('Y-m-d');
     $dates = [];
     foreach(CarbonPeriod::create($request->date_from, $request->date_to) as $d) {
         $dates[] = $d->toDateString();
     }
 
     return view('reports.item_movements_report', compact(
-        'orders_in', 'orders_in_return', 'orders_out', 'orders_in_return', 'orders_out_return', 
-        'loads_from', 'loads_to', 
-        'coll_orders_in', 'coll_orders_in_return', 'coll_orders_out', 'coll_orders_in_return', 'coll_orders_out_return', 
-        'coll_loads_from', 'coll_loads_to', 
-        'to_factory', 'from_factory', 'scrap_factory', 'pieces_factory', 
-        'resources', 'dates', 'openingBalance', 'previousDate', 'balanceAtDateTo', 'init_quantity'
+        'orders_in', 'orders_in_return', 'orders_out', 'orders_out_return',
+        'loads_from', 'loads_to',
+        'to_factory', 'from_factory', 'scrap_factory', 'pieces_factory',
+        'resources', 'dates', 'openingBalance', 'previousDate', 'balanceAtDateTo',
+        'liveStock', 'rangeMovements', 'periodFrom', 'periodTo'
     ));
 }
     // Momaher 
