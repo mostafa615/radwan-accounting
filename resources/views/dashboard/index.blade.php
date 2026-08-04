@@ -53,10 +53,31 @@
       <a href="{{ route('dashboard') }}" class="btn btn-default">الشهر الحالي</a>
       <span class="text-muted" style="margin-right:14px; font-size:12px">
         المقارنة مع: {{ $prevFrom }} → {{ $prevTo }}
+        &nbsp;|&nbsp; آخر يوم فيه بيانات: <strong>{{ $latest }}</strong>
       </span>
     </form>
   </div>
 </div>
+
+{{-- لو الفترة المختارة مفيهاش أي فواتير، نقول السبب بصراحة بدل ما الأصفار تبان كأنها خطأ --}}
+@if($kpi['sales']['count'] == 0 && $kpi['purchases']['count'] == 0)
+<div class="callout callout-warning" style="margin-bottom:15px">
+  <h4 style="margin:0 0 6px"><i class="fa fa-info-circle"></i> مفيش أي فواتير في الفترة المختارة</h4>
+  <p style="margin:0">
+    الفترة من <strong>{{ $from }}</strong> إلى <strong>{{ $to }}</strong> مفيهاش فواتير،
+    فالأصفار اللي فوق صح ومش خطأ.
+    آخر يوم فيه بيانات في قاعدة البيانات هو <strong>{{ $latest }}</strong>.
+    @if(strtotime($from) > strtotime($latest))
+      التاريخ اللي اخترته بعد آخر يوم فيه بيانات.
+    @endif
+  </p>
+  <p style="margin:6px 0 0">
+    <a href="{{ route('dashboard') }}?date_from={{ $latest }}&date_to={{ $latest }}&branch_id={{ $branchId }}"
+       class="btn btn-xs btn-warning">اعرض آخر يوم فيه بيانات ({{ $latest }})</a>
+    <a href="{{ route('dashboard') }}" class="btn btn-xs btn-default">الشهر الحالي</a>
+  </p>
+</div>
+@endif
 
 {{-- ================= الصف ١: الكروت ================= --}}
 <div class="row">
