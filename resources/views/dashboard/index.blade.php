@@ -5,6 +5,40 @@
 
 @push('styles')
 <style>
+  /* ---------- شريط الفلتر ---------- */
+  .dash-filter { background:#fff; border-radius:6px; border:1px solid #e4e8ec;
+                 box-shadow:0 1px 2px rgba(0,0,0,.05); padding:14px 16px; margin-bottom:16px; }
+
+  .f-presets { display:flex; flex-wrap:wrap; align-items:center; gap:7px;
+               padding-bottom:12px; margin-bottom:12px; border-bottom:1px solid #eef1f4; }
+  .f-presets-label { font-size:12px; font-weight:700; color:#8a9299; margin-left:4px; }
+  .f-chip { display:inline-block; padding:5px 12px; border-radius:14px; font-size:12.5px;
+            background:#f2f5f7; color:#4a555e; border:1px solid transparent;
+            text-decoration:none; transition:all .12s; white-space:nowrap; }
+  .f-chip:hover  { background:#e4eaef; color:#26323c; text-decoration:none; }
+  .f-chip.is-active { background:#3c8dbc; border-color:#3c8dbc; color:#fff; font-weight:700; }
+  .f-chip.is-active:hover { background:#347ca6; color:#fff; }
+
+  /* شبكة تسمح للحقول تكبر وتصغر بدل ما تتزنق جانب بعض */
+  .f-grid { display:flex; flex-wrap:wrap; gap:12px; align-items:flex-end; }
+  .f-field { flex:1 1 170px; min-width:150px; }
+  .f-field > label { display:block; font-size:12px; font-weight:700; color:#6b757d;
+                     margin-bottom:5px; }
+  .f-field .form-control { height:36px; }
+  .f-submit { flex:0 0 130px; min-width:110px; }
+  .f-submit .btn { height:36px; font-weight:700; }
+
+  .f-meta { display:flex; flex-wrap:wrap; gap:18px; margin-top:12px; padding-top:11px;
+            border-top:1px solid #eef1f4; font-size:12px; color:#8a9299; }
+  .f-meta strong { color:#4a555e; }
+  .f-meta .fa { opacity:.65; margin-left:3px; }
+
+  /* ---------- الكروت ---------- */
+  /* flex بدل أعمدة bootstrap الثابتة: التوزيع يفضل متساوي مهما كان عدد الكروت */
+  .kpi-row { display:flex; flex-wrap:wrap; gap:15px; margin-bottom:15px; }
+  .kpi-col { flex:1 1 190px; min-width:180px; display:flex; }
+  .kpi-col > .kpi { width:100%; }
+
   .kpi { border-radius: 6px; padding: 16px 18px; color: #fff; position: relative; overflow: hidden; min-height: 108px; }
   .kpi .k-label { font-size: 13px; opacity: .9; }
   .kpi .k-value { font-size: 26px; font-weight: 700; line-height: 1.25; margin-top: 4px; }
@@ -29,34 +63,54 @@
 @section('content')
 
 {{-- ================= الفلاتر ================= --}}
-<div class="box box-solid">
-  <div class="box-body">
-    <form method="GET" action="{{ route('dashboard') }}" class="form-inline">
-      <div class="form-group">
-        <label>من تاريخ</label>
-        <input type="date" name="date_from" value="{{ $from }}" class="form-control">
+<div class="dash-filter">
+  <form method="GET" action="{{ route('dashboard') }}">
+
+    {{-- الفترات السريعة --}}
+    <div class="f-presets">
+      <span class="f-presets-label"><i class="fa fa-bolt"></i> فترات سريعة</span>
+      @foreach($presets as $p)
+        <a class="f-chip {{ $p['active'] ? 'is-active' : '' }}"
+           href="{{ route('dashboard') }}?date_from={{ $p['from'] }}&date_to={{ $p['to'] }}&branch_id={{ $branchId }}">
+          {{ $p['label'] }}
+        </a>
+      @endforeach
+    </div>
+
+    {{-- الحقول --}}
+    <div class="f-grid">
+      <div class="f-field">
+        <label for="f_from">من تاريخ</label>
+        <input id="f_from" type="date" name="date_from" value="{{ $from }}" class="form-control">
       </div>
-      <div class="form-group" style="margin-right:10px">
-        <label>إلى تاريخ</label>
-        <input type="date" name="date_to" value="{{ $to }}" class="form-control">
+      <div class="f-field">
+        <label for="f_to">إلى تاريخ</label>
+        <input id="f_to" type="date" name="date_to" value="{{ $to }}" class="form-control">
       </div>
-      <div class="form-group" style="margin-right:10px">
-        <label>الفرع</label>
-        <select name="branch_id" class="form-control">
+      <div class="f-field">
+        <label for="f_branch">الفرع</label>
+        <select id="f_branch" name="branch_id" class="form-control">
           <option value="">كل الفروع</option>
           @foreach($branches as $b)
             <option value="{{ $b->id }}" {{ $branchId == $b->id ? 'selected' : '' }}>{{ $b->name }}</option>
           @endforeach
         </select>
       </div>
-      <button type="submit" class="btn btn-primary" style="margin-right:10px">عرض</button>
-      <a href="{{ route('dashboard') }}" class="btn btn-default">الشهر الحالي</a>
-      <span class="text-muted" style="margin-right:14px; font-size:12px">
-        المقارنة مع: {{ $prevFrom }} → {{ $prevTo }}
-        &nbsp;|&nbsp; آخر يوم فيه بيانات: <strong>{{ $latest }}</strong>
-      </span>
-    </form>
-  </div>
+      <div class="f-field f-submit">
+        <button type="submit" class="btn btn-primary btn-block">
+          <i class="fa fa-search"></i> عرض
+        </button>
+      </div>
+    </div>
+
+    {{-- سطر المعلومات --}}
+    <div class="f-meta">
+      <span><i class="fa fa-calendar-o"></i> الفترة المعروضة: <strong>{{ $from }}</strong> → <strong>{{ $to }}</strong></span>
+      <span><i class="fa fa-exchange"></i> تُقارن بـ: <strong>{{ $prevFrom }}</strong> → <strong>{{ $prevTo }}</strong></span>
+      <span><i class="fa fa-database"></i> آخر يوم فيه بيانات: <strong>{{ $latest }}</strong></span>
+    </div>
+
+  </form>
 </div>
 
 {{-- لو الفترة المختارة مفيهاش أي فواتير، نقول السبب بصراحة بدل ما الأصفار تبان كأنها خطأ --}}
@@ -80,9 +134,9 @@
 @endif
 
 {{-- ================= الصف ١: الكروت ================= --}}
-<div class="row">
+<div class="kpi-row">
   @foreach($kpi as $c)
-  <div class="col-lg-2 col-md-4 col-sm-6" style="margin-bottom:15px">
+  <div class="kpi-col">
     <div class="kpi k-{{ $c['colour'] }}">
       <i class="fa {{ $c['icon'] }} k-icon"></i>
       <div class="k-label">{{ $c['label'] }}</div>

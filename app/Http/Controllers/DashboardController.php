@@ -109,12 +109,9 @@ class DashboardController extends Controller
                     : 'لا مبيعات في الفترة',
                 'change' => $this->pctChange($collected, $prevCollected),
             ],
-            'receivables' => [
-                'label' => 'المديونيات', 'icon' => 'fa-exclamation-triangle', 'colour' => 'red',
-                'value' => $receivables, 'unit' => 'ج.م',
-                'sub' => DB::table('clients')->whereRaw("cast(nullif(balance,'') as decimal(18,2)) <> 0")->count() . ' عميل',
-                'change' => null,   // a running total, not a per-period figure
-            ],
+            // No receivables card by request. $receivables is still computed
+            // above because the top-debtors table needs it for each client's
+            // share of the total.
             'safes' => [
                 'label' => 'رصيد الخزن', 'icon' => 'fa-university', 'colour' => 'blue',
                 'value' => (float) DB::table('reposites')->sum(DB::raw("cast(nullif(balance,'') as decimal(18,2))")),
@@ -153,9 +150,15 @@ class DashboardController extends Controller
 
         $branches = Branch::select('id', 'name')->orderBy('name')->get();
 
+        // Quick ranges, anchored on the latest day that has data rather than on
+        // today. Anchoring on today would hand the user an empty period whenever
+        // the database is a day or two behind, which is what "I picked yesterday
+        // and got zero" was.
+        $presets = $this->presets($latest, $from, $to);
+
         return view('dashboard.index', compact(
             'kpi', 'trend', 'branchStats', 'topDebtors', 'topItems', 'safes', 'lowStock',
-            'alerts', 'aging', 'factory', 'branches',
+            'alerts', 'aging', 'factory', 'branches', 'presets',
             'from', 'to', 'prevFrom', 'prevTo', 'branchId', 'latest'
         ));
     }
@@ -163,6 +166,41 @@ class DashboardController extends Controller
     // =====================================================================
     // helpers
     // =====================================================================
+
+    /**
+     * Quick-range shortcuts for the filter bar.
+     *
+     * Anchored on $latest (the newest invoice date) instead of today, so every
+     * shortcut lands on a window that actually contains data.
+     */
+    private function presets($latest, $from, $to)
+    {
+        $L = Carbon::parse($latest);
+
+        $ranges = [
+            'آخر يوم فيه بيانات' => [$L->copy(), $L->copy()],
+            'آخر ٧ أيام'         => [$L->copy()->subDays(6), $L->copy()],
+            'آخر ٣٠ يوم'         => [$L->copy()->subDays(29), $L->copy()],
+            'الشهر الحالي'       => [$L->copy()->startOfMonth(), $L->copy()],
+            'الشهر السابق'       => [$L->copy()->subMonthNoOverflow()->startOfMonth(),
+                                     $L->copy()->subMonthNoOverflow()->endOfMonth()],
+            'آخر ٣ شهور'         => [$L->copy()->subMonthsNoOverflow(3), $L->copy()],
+            'السنة الحالية'      => [$L->copy()->startOfYear(), $L->copy()],
+        ];
+
+        $out = [];
+        foreach ($ranges as $label => $r) {
+            $f = $r[0]->format('Y-m-d');
+            $t = $r[1]->format('Y-m-d');
+            $out[] = [
+                'label'  => $label,
+                'from'   => $f,
+                'to'     => $t,
+                'active' => ($f === $from && $t === $to),
+            ];
+        }
+        return $out;
+    }
 
     /** Count + value of invoices of one kind in a window. */
     private function invoiceTotals($from, $to, $type, $isReturn, $branchId)
