@@ -340,7 +340,7 @@
                         @if(Auth::user()->can('item_report'))
                             <div class="col-md-4">
                                 <a class="btn btn-block btn-primary btn-sm btn-flat"
-                                   href="#" data-toggle="modal" data-target="#itemMovementsReportModal">تقرير حركات الصنف الجديد ماهر</a>
+                                   href="#" data-toggle="modal" data-target="#itemMovementsReportModal">تقرير حركات الصنف النهائي</a>
                                 <!-- Modal -->
                                 <div id="itemMovementsReportModal" class="modal fade" role="dialog">
                                     <div class="modal-dialog">
@@ -350,7 +350,7 @@
                                             <div class="modal-header">
                                                 <button type="button" class="close" data-dismiss="modal">&times;
                                                 </button>
-                                                <h4 class="modal-title">تقرير حركات الصنف الجديد ماهر</h4>
+                                                <h4 class="modal-title">تقرير حركات الصنف النهائي</h4>
                                             </div>
                                             {{Form::open(['route'=>'item_movements_report','method'=>'GET'])}}
                                             <div class="modal-body">

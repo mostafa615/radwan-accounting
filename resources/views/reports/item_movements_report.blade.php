@@ -1,6 +1,6 @@
 @extends('layout.app')
 @section('title', 'التقارير')
-@section('sub-title', 'تقرير حركات الصنف الجديد ماهر')
+@section('sub-title', 'تقرير حركات الصنف النهائي')
 @section('content')
 <div class="row">
   <div class="col-md-12">
@@ -399,7 +399,9 @@
         <div class="tab-pane fade" id="itemReport">
           <div class="table-responsive" style="max-height: 600px; overflow-y: auto;">
             <div style="margin-bottom: 15px; font-size: 16px; font-weight: bold;">
-              الرصيد الافتتاحي (إجمالي الرصيد لليوم السابق {{ $previousDate }}): {{ number_format($openingBalance, 2) }}
+              المدة المختارة: من {{ $periodFrom }} إلى {{ $periodTo }}
+              &nbsp;|&nbsp;
+              رصيد أول المدة (الرصيد الافتتاحي في {{ $periodFrom }}): {{ number_format($openingBalance, 2) }}
             </div>
             <table class="table table-bordered table-striped datatable-no-paging" style="width: 100%!important"
               id="item-report-table2">
@@ -625,20 +627,27 @@
   <div class="col-md-12">
     <div class="box">
       <div class="box-body">
+        <div style="margin-bottom: 10px; font-size: 15px; font-weight: bold;">
+          المدة المختارة: من {{ $periodFrom }} إلى {{ $periodTo }}
+        </div>
         <table class="table table-bordered">
           <thead>
             <tr>
               <td>الصنف</td>
-              <td>الرصيد الافتتاحي</td>
-              <td>الرصيد الحالي</td>
+              <td>رصيد أول المدة ({{ $periodFrom }})</td>
+              <td>حركة المدة</td>
+              <td>رصيد آخر المدة ({{ $periodTo }})</td>
+              <td>الرصيد الحالي الآن</td>
             </tr>
           </thead>
           <tbody>
             @foreach($resources as $resource)
             <tr>
               <td>{{optional($resource->item)->name}}</td>
-              <td>{{ number_format($init_quantity, 2) }}</td>
+              <td>{{ number_format($openingBalance, 2) }}</td>
+              <td>{{ number_format($rangeMovements, 2) }}</td>
               <td id="final-quantity-cell">{{ number_format($balanceAtDateTo, 2) }}</td>
+              <td>{{ number_format($liveStock, 2) }}</td>
             </tr>
             @endforeach
           </tbody>

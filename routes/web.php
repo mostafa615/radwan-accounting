@@ -529,6 +529,13 @@ Route::group(['middleware' => ['auth']], function () {
             'as' => 'reports.supplier-accounts'
         ]);
     });
+    // Admin only. Guarded on the route as well as hidden from the sidebar,
+    // so typing the url directly does not get past it either.
+    Route::get('dashboard', [
+        'uses' => 'DashboardController@index',
+        'as' => 'dashboard',
+        'middleware' => 'role:admin'
+    ]);
     Route::group(['prefix' => 'home', 'as' => 'home'], function () {
         Route::get('', [
             'uses' => 'HomeController@index',
