@@ -89,14 +89,10 @@ class OrdersOutController extends Controller
         //
         $groups = Group::has('items')->get();
         $suppliers = Supplier::select('id', 'name')->get();
-        $stores = Store::select('id', 'name')->get();
-        if (auth()->user()->id != 1) {
-            $stores = Store::where(function ($query) {
-                $query->where('user_id', auth()->user()->id);
-                })->get();
-        }else{
-            $stores = Store::all();
-        }
+        // Store is fixed by the user's own coding (users.store_id, falling back
+        // to their branch). Admins still pick freely.
+        $stores = auth()->user()->allowedStores();
+        $pinnedStoreId = auth()->user()->pinnedStoreId();
 
         if (auth()->user()->id != 1) {
             $reposites = Reposite::where(function ($query) {
@@ -106,7 +102,7 @@ class OrdersOutController extends Controller
         }else{
             $reposites = Reposite::all();
         }
-        return view('orders-out.create', compact('groups', 'suppliers', 'stores', 'reposites'));
+        return view('orders-out.create', compact('groups', 'suppliers', 'stores', 'reposites', 'pinnedStoreId'));
     }
 
 //     public function store(Request $request)

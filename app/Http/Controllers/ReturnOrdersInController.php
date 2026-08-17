@@ -102,14 +102,10 @@ class ReturnOrdersInController extends Controller
         $clients = Client::get();
 
         $buyersCount = $clientCount + $supplierCount;
-        $stores = Store::select('id', 'name')->get();
-        if (auth()->user()->id != 1) {
-            $stores = Store::where(function ($query) {
-                $query->where('user_id', auth()->user()->id);
-                })->get();
-        }else{
-            $stores = Store::all();
-        }
+        // Store is fixed by the user's own coding (users.store_id, falling back
+        // to their branch). Admins still pick freely.
+        $stores = auth()->user()->allowedStores();
+        $pinnedStoreId = auth()->user()->pinnedStoreId();
 
         if (auth()->user()->id != 1) {
             $reposites = Reposite::where(function ($query) {
@@ -130,7 +126,7 @@ class ReturnOrdersInController extends Controller
         return view('return-orders-in.create', compact('clientCount',
             'supplierCount', 'groups',
             'buyersCount', 'reposites',
-            'stores','clients','drivers'
+            'stores','clients','drivers','pinnedStoreId'
         ));
     }
 

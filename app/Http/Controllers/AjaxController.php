@@ -198,18 +198,9 @@ class AjaxController extends Controller
 
     public function item_stores($id)
     {
-        $resources = Store::/*whereHas('quantities', function ($q) use ($id) {
-            $q->where('item_id', $id)->where('quantity', '>', 0);
-
-        })->*/get();
-        
-        // if (auth()->user()->id != 1) {
-        //     $resources = Store::where(function ($query) {
-        //         $query->where('user_id', auth()->user()->id);
-        //         })->get();
-        // }else{
-        //     $resources = Store::all();
-        // }
+        // Only the stores this user is coded to. Filtered server-side so the
+        // restriction holds even if the page's javascript is bypassed.
+        $resources = auth()->user()->allowedStores();
         $data = [
             'status' => 1,
             'message' => 'done',

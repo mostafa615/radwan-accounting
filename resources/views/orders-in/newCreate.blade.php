@@ -310,15 +310,21 @@
                 type: 'GET',
                 success: function (data) {
                     console.log(data);
+                    // The endpoint returns only the stores this user is coded to,
+                    // so every option here is already permitted.
                     $('#store_id').children().remove();
-                    $('#store_id').append('<option value="0">  من فضلك اختر المخزن    </option>');
+                    if (data.data.length > 1) {
+                        $('#store_id').append('<option value="0">  من فضلك اختر المخزن    </option>');
+                    }
                     $.each(data.data, function (e) {
-                        if(data.data[e].user_id == user_id){
-                            $('#store_id').append('<option value="' + data.data[e].id + '" data-storeuserid="' + data.data[e].user_id + '">' + data.data[e].name + '  (مخزن الفرع) </option>');
-                        }else{
-                            $('#store_id').append('<option value="' + data.data[e].id + '" data-storeuserid="' + data.data[e].user_id + '">' + data.data[e].name + ' </option>');
-                        }
+                        $('#store_id').append('<option value="' + data.data[e].id + '">' + data.data[e].name + '</option>');
                     });
+                    // A single store means it is fixed: select it and lock the picker.
+                    if (data.data.length === 1) {
+                        $('#store_id').prop('disabled', true)
+                                      .val(data.data[0].id)
+                                      .trigger('change');
+                    }
                 }
             });
         });
@@ -336,12 +342,12 @@
             });
         });
         $('#add').on('click', function () {
-            var user_id = {!! auth()->user()->id !!};
-            var e = document.getElementById("store_id");
-            var option= e.options[e.selectedIndex];
-            var storeUserId = option.getAttribute("data-storeuserid");
-            if(user_id == 1 || user_id == storeUserId){
-            // alert(storeUserId);
+            // The store list is filtered server-side to this user's own store, so
+            // anything selectable here is permitted; just check one is chosen.
+            // This previously compared the user id against stores.user_id, which
+            // matched only 4 of 24 accounts and blocked everyone else from adding
+            // a line at all.
+            if($('#store_id').val() > 0){
 
             var group_id = $('#group_id').val(),
                 group_name = $('#group_id option:selected').text(),
@@ -426,7 +432,7 @@
             store_quantity = 0;
 
          }else{
-            alert('من فضلك اختار المخزن المحدد للفرع');
+            alert('من فضلك اختار المخزن');
          }
             
         });

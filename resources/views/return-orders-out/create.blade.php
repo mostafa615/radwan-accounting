@@ -42,12 +42,19 @@
                         <div class="col-md-4">
                             <div class="form-group">
                                 <label for="store_id">المخزن</label>
-                                <select required id="store_id">
-                                    <option value="0"> من فضلك اختر المخزن</option>
+                                {{-- Fixed to the user's own store; only admins choose. --}}
+                                <select required id="store_id" @if($pinnedStoreId) disabled @endif>
+                                    @unless($pinnedStoreId)
+                                        <option value="0"> من فضلك اختر المخزن</option>
+                                    @endunless
                                     @foreach ($stores as $store)
-                                        <option value="{{$store->id}}">{{$store->name}}</option>
+                                        <option value="{{$store->id}}"
+                                            {{ $pinnedStoreId == $store->id ? 'selected' : '' }}>{{$store->name}}</option>
                                     @endforeach
                                 </select>
+                                @if($pinnedStoreId)
+                                    <small class="text-muted">مخزن الفرع الخاص بك — ثابت</small>
+                                @endif
                             </div>
                         </div>
                         <div class="col-md-4">
