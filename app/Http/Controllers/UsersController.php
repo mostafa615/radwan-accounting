@@ -77,9 +77,22 @@ class UsersController extends Controller
         $user = User::findOrFail($user->id);
         $user->update($request->except('job_id', 'role_id', 'emp_id'));
         $user->update(['type_id' => $request->job_id]);
-        if(!$user->hasRole('admin')) {
-            return $user->roles()->sync([]);
-            $user->attachRole(Role::find($request->role_id));
+        // Swap the user's role for the one just picked.
+        //
+        // This used to `return $user->roles()->sync([])` before attaching the new
+        // role, so the attach line was unreachable: editing any non-admin user
+        // stripped their role and returned straight away, skipping the employee
+        // name update, the activity log and the redirect. A user left with no
+        // role then cannot sign in at all, because the sidebar view composer
+        // calls roles()->first()->perms() and fatals on the null.
+        //
+        // sync() with the chosen id replaces the role in one step. When no role
+        // is posted the existing one is left alone rather than wiped.
+        if(!$user->hasRole('admin') && $request->role_id) {
+            $role = Role::find($request->role_id);
+            if($role) {
+                $user->roles()->sync([$role->id]);
+            }
         }
 
         if($request->emp_id) {
