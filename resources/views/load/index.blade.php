@@ -38,11 +38,20 @@
                                 </div>
                             </div>
                         @else
-                            {{Form::open(['route'=>'load.create','method'=>'POST'])}}
-                            {{csrf_field()}}
-                        <input type="hidden" name="store_id" value="{{$store->where('user_id',Auth()->user()->id)->first()->id}}">
-                            <button type="submit" class="btn btn-success">إضافة</button>
-                            {{Form::close()}}
+                            {{-- The user's own coded store. This used to read
+                                 stores.user_id and call ->first()->id on it, which
+                                 fataled for any account not recorded as a store's
+                                 owner. --}}
+                            @php($loadStoreId = optional(Auth()->user()->allowedStores()->first())->id)
+                            @if($loadStoreId)
+                                {{Form::open(['route'=>'load.create','method'=>'POST'])}}
+                                {{csrf_field()}}
+                                <input type="hidden" name="store_id" value="{{$loadStoreId}}">
+                                <button type="submit" class="btn btn-success">إضافة</button>
+                                {{Form::close()}}
+                            @else
+                                <span class="text-muted">لا يوجد مخزن مرتبط بحسابك</span>
+                            @endif
                         @endif
                     @endif
                     </div>

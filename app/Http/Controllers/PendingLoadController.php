@@ -129,7 +129,7 @@ class PendingLoadController extends Controller
         )
             ->leftJoin('items', 'items.id', '=', 'order_details.item_id')
             ->where('order_id', $request->order_id)
-            ->where('store_id', auth()->user()->store->id)
+            ->where('store_id', optional(auth()->user()->store)->id)
             ->where('load_pending', true);
         return Datatables::of($query)
             ->addColumn('action', 'pending-load.orders.modal.action')
