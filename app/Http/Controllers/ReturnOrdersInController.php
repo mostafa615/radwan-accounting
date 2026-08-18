@@ -370,7 +370,12 @@ class ReturnOrdersInController extends Controller
             ]);
         }
 
-        $user_store = Store::where('user_id', Auth()->user()->id)->first();
+        // The store the account is coded to (users.store_id, else the branch store),
+        // not the single owner recorded in stores.user_id. Under the old rule a
+        // second sales account on an existing branch never matched, so every line
+        // it created stayed load_pending and its payment was hidden from the safe
+        // keeper by the whereDoesntHave filter on pending-pays.
+        $user_store = Auth()->user()->allowedStores()->first();
         foreach($request->group_id as $item) {
             $load_pending = 1;
             $price_pending = 0;
