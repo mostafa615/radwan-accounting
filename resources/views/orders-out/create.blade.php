@@ -298,8 +298,10 @@
             final_total = parseFloat(final_total) + parseFloat(total);
             $('#final_total').val(final_total);
             update_final_final_total();
-            $('#store_id').val(''),
-                $('#quantity').val(0),
+            // The store is deliberately left alone. It is pinned to the user's
+            // branch and the select is disabled, so clearing it left nothing
+            // selected and every line after the first failed the store check.
+            $('#quantity').val(0),
                 $('#unite_price').val(0),
                 $('#item_discount').val(0);
         });
