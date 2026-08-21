@@ -26,6 +26,32 @@ input[type=number] {
                     </div>
                 </div>
                 <div class="box-body">
+                    {{-- Filter first: the unfiltered list is 3,563 items and ~43k inputs. --}}
+                    <form method="GET" action="{{ route('items.index') }}" class="form-inline" style="margin-bottom:15px">
+                        <div class="form-group">
+                            <label for="f_group">المجموعة</label>
+                            <select name="group_id" id="f_group" class="form-control">
+                                <option value="">كل المجموعات</option>
+                                @foreach($groups as $g)
+                                    <option value="{{ $g->id }}" {{ request('group_id') == $g->id ? 'selected' : '' }}>{{ $g->name }}</option>
+                                @endforeach
+                            </select>
+                        </div>
+                        <div class="form-group" style="margin-right:10px">
+                            <label for="f_search">بحث بالاسم أو الكود</label>
+                            <input type="text" name="search" id="f_search" class="form-control"
+                                   value="{{ request('search') }}" placeholder="اكتب جزء من الاسم أو الكود">
+                        </div>
+                        <button type="submit" class="btn btn-primary" style="margin-right:10px">
+                            <i class="fa fa-search"></i> عرض
+                        </button>
+                        <a href="{{ route('items.index') }}" class="btn btn-default">إلغاء الفلتر</a>
+                        <span class="text-muted" style="margin-right:14px; font-size:12px">
+                            إجمالي المطابق: <strong>{{ number_format($resources->total()) }}</strong> صنف
+                            &nbsp;|&nbsp; معروض: {{ $resources->count() }}
+                            (صفحة {{ $resources->currentPage() }} من {{ $resources->lastPage() }})
+                        </span>
+                    </form>
                     <div class="table-responsive">
                         <form method="POST" role="form" action="{{route('items.updateItemsData')}}" enctype="multipart/form-data">
                             {{ csrf_field() }}
@@ -64,7 +90,7 @@ input[type=number] {
 
                                     ?></div>
                                     <tr class="{{ $resource->active==0? 'bg-danger' : '' }}" >
-                                        <td>{{$loop->iteration}}</td>
+                                        <td>{{ $resources->firstItem() + $loop->index }}</td>
                                         <td>{{$resource->code}}</td>
                                         <td>{{$resource->group->name or ''}}</td>
                                         <td>{{$resource->name}}</td>
@@ -126,8 +152,12 @@ input[type=number] {
                                 @endforeach
                                 </tbody>
                             </table>
+                            <div class="text-center">{{ $resources->links() }}</div>
                             <div class="form-group">
                                 <button type="submit" class="btn btn-lg btn-success"><i class="fa fa-plus"></i> حفظ </button>
+                                <span class="text-muted" style="margin-right:10px; font-size:12px">
+                                    الحفظ يشمل الأصناف الظاهرة في الصفحة الحالية فقط
+                                </span>
                             </div>
                         </form>
                         
@@ -139,8 +169,13 @@ input[type=number] {
 @stop
 @push('scripts')
         <script>
+        // Paging and search are handled server-side now; leaving DataTables'
+        // own copies on would give the screen two of each.
         $("#example1").DataTable({
-            dom: 'Blfrtip',
+            paging: false,
+            searching: false,
+            info: false,
+            dom: 'Bt',
             lengthMenu : [[10, 25, 50, 100, 250], [10, 25, 50, 100, 250]],
             buttons: [
                 'copy', 'csv', 'excel', 'pdf', 'print'

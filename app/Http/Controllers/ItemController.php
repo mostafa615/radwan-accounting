@@ -23,15 +23,36 @@ class ItemController extends Controller
         $this->dateNow = Carbon::now()->format('Y-m-d');
         $this->timeNow = Carbon::now()->format('H:i:s');
     }
-    public function index(ItemsDataTable $dataTable)
+    public function index(Request $request)
     {
         $query = Item::query();
         $query->where('is_damage', null);
         // $query->where('is_special', null);
                 
-         $resources=$query->with('group','quantities')->get();
+        // Filter before loading. Rendering every item produced an 18MB page
+        // with ~43k form inputs, which locked the browser up before DataTables
+        // could even start. One group alone (مقاسات خاصة) holds 2,080 items, so
+        // the group filter needs paging behind it too.
+        if ($request->filled('group_id')) {
+            $query->where('group_id', $request->group_id);
+        }
+
+        if ($request->filled('search')) {
+            $term = trim($request->search);
+            $query->where(function ($q) use ($term) {
+                $q->where('name', 'like', '%' . $term . '%')
+                  ->orWhere('code', 'like', '%' . $term . '%');
+            });
+        }
+
+        $resources = $query->with('group', 'quantities')
+            ->orderBy('id')
+            ->paginate(100)
+            ->appends($request->query());
+
+        $groups = Group::select('id', 'name')->orderBy('name')->get();
         //   dd($resources[1]->quantities->where('ownerable_type','App\Models\Store'));
-        return view('items.index',compact('resources'));
+        return view('items.index', compact('resources', 'groups'));
     }
 
     public function create()
