@@ -2228,6 +2228,9 @@ public function item_movements_report(Request $request) {
         'items' => 'required',
         'date_from' => 'required',
         'date_to' => 'required',
+        'stores_id' => 'required',
+    ], [
+        'stores_id.required' => 'من فضلك اختر المخزن',
     ]);
 
     // --- Date Logic ---
@@ -2236,9 +2239,11 @@ public function item_movements_report(Request $request) {
     // returned a date range the user never asked for.)
     $startDateStr = $request->date_from;
     
-    $reqStoreIds = $request->stores_id;
-    $hasStores = ($request->has('stores_id') && !empty($reqStoreIds));
-    $reqItems = $request->items;
+    // Cast to arrays: a missing stores_id arrived as null and blew up the
+    // first foreach with "Invalid argument supplied for foreach()".
+    $reqStoreIds = array_filter((array) ($request->stores_id ?: []));
+    $hasStores = !empty($reqStoreIds);
+    $reqItems = array_filter((array) ($request->items ?: []));
     $fromDate = $request->date_from;
     $toDate = $request->date_to;
 
