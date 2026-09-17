@@ -19,6 +19,11 @@
                             من فضلك ادخل كل البيانات للصنف
                         </div>
                     </div>
+                    <div id="duplicate_errors" hidden>
+                        <div class="alert alert-danger">
+                            يرجي ملاحظة انه لا يمكن تكرار نفس الصنف
+                        </div>
+                    </div>
                     <div class="row">
                         <div class="col-md-4">
                             <div class="form-group">
@@ -177,6 +182,21 @@
                 $('#quantity_errors').show();
                 $('#quantity_errors').delay(1500).fadeOut(350);
                 $('#quantity').val('');
+                return false;
+            }
+            // The invoice screens already block this; the transfer screen did not,
+            // so the same item could be added twice and the receiving store saw the
+            // line duplicated in its approval list.
+            var isDuplicate = false;
+            $('#table_items tbody tr').each(function () {
+                if ($(this).find('input[name="item_id[]"]').val() == item_id) {
+                    isDuplicate = true;
+                    return false;
+                }
+            });
+
+            if (isDuplicate) {
+                $('#duplicate_errors').show().delay(1500).fadeOut(350);
                 return false;
             }
             $('<tr>').html(
