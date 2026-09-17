@@ -636,6 +636,20 @@
 @stop
 @push('scripts')
     <script>
+        // Search box on the item list. select2 4.0.4 ships with the layout.
+        function initItemSearch() {
+            var $el = $('#item_id');
+            if ($el.hasClass('select2-hidden-accessible')) {
+                $el.select2('destroy');
+            }
+            $el.select2({
+                width: '100%',
+                dir: 'rtl',
+                placeholder: 'ابحث باسم الصنف...',
+                language: { noResults: function () { return 'لا يوجد صنف بهذا الاسم'; } }
+            });
+        }
+        $(function () { initItemSearch(); });
         var final_total = 0;
         $('#group_id').on('change', function () {
             $.ajax({
@@ -648,6 +662,10 @@
                     $.each(data.data, function (e) {
                         $('#item_id').append('<option value="' + data.data[e].id + '">' + data.data[e].name + '</option>');
                     });
+
+                    // المقاسات الخاصة لوحدها 2181 صنف بأسماء متشابهة،
+                    // فبحث بالاسم أأمن بكتير من التمرير في القائمة.
+                    initItemSearch();
                 }
             })
 
