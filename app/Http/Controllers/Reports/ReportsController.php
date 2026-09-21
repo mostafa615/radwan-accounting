@@ -2186,14 +2186,23 @@ private function netStockMovement(array $itemIds, array $storeIds, $from, $to) {
     // of the ~13.5k result rows and measured 38s on its own.
     $net -= (float) DB::table('operation_order_details as d')
         ->join('operation_orders as oo', 'oo.id', '=', 'd.operation_order_id')
-        ->leftJoin(DB::raw('(SELECT res.order_details_id, res.old_item_quantity
-                               FROM operation_order_results res
-                               JOIN (SELECT order_details_id, MAX(id) AS mx
-                                       FROM operation_order_results
-                                      GROUP BY order_details_id) pick
-                                 ON pick.mx = res.id) as r'),
-                  'r.order_details_id', '=', 'd.id')
-        ->whereBetween('oo.date', [$from, $to])
+        // Confirmed results only. Stock moves when the store confirms the
+        // production (updateConfirm), so an unconfirmed work order has taken
+        // nothing out of the store yet. This used to be a left join that fell
+        // back to the detail row, counting work orders that had not run.
+        ->join(DB::raw('(SELECT res.order_details_id, res.old_item_quantity, res.updated_at
+                           FROM operation_order_results res
+                           JOIN (SELECT order_details_id, MAX(id) AS mx
+                                   FROM operation_order_results
+                                  WHERE store_confirm = 1
+                                  GROUP BY order_details_id) pick
+                             ON pick.mx = res.id) as r'),
+              'r.order_details_id', '=', 'd.id')
+        // Stock moves when the store confirms, which can be days after the
+        // work order's own date — 43% are same-day and one ran 36 days late.
+        // Attributing by oo.date put the movement in a different period from
+        // the stock change, which is what pulled the balances away from الجرد.
+        ->whereBetween('r.updated_at', [$from . ' 00:00:00', $to . ' 23:59:59'])
         ->when($hasStores, function ($q) use ($storeIds) {
             return $q->whereIn('oo.store_id', $storeIds);
         })
@@ -2204,7 +2213,12 @@ private function netStockMovement(array $itemIds, array $storeIds, $from, $to) {
     $net += (float) DB::table('operation_order_results as r')
         ->join('operation_order_details as d', 'd.id', '=', 'r.order_details_id')
         ->join('operation_orders as oo', 'oo.id', '=', 'd.operation_order_id')
-        ->whereBetween('oo.date', [$from, $to])
+        // Stock moves when the store confirms, which can be days after the
+        // work order's own date — 43% are same-day and one ran 36 days late.
+        // Attributing by oo.date put the movement in a different period from
+        // the stock change, which is what pulled the balances away from الجرد.
+        ->whereBetween('r.updated_at', [$from . ' 00:00:00', $to . ' 23:59:59'])
+        ->where('r.store_confirm', 1)
         ->when($hasStores, function ($q) use ($storeIds) {
             return $q->whereIn('oo.store_id', $storeIds);
         })
@@ -2215,7 +2229,13 @@ private function netStockMovement(array $itemIds, array $storeIds, $from, $to) {
     $net -= (float) DB::table('operation_order_result_details as rd')
         ->join('operation_order_details as d', 'd.id', '=', 'rd.order_details_id')
         ->join('operation_orders as oo', 'oo.id', '=', 'd.operation_order_id')
-        ->whereBetween('oo.date', [$from, $to])
+        ->join('operation_order_results as rr', 'rr.id', '=', 'rd.order_results_id')
+        ->where('rr.store_confirm', 1)
+        // Stock moves when the store confirms, which can be days after the
+        // work order's own date — 43% are same-day and one ran 36 days late.
+        // Attributing by oo.date put the movement in a different period from
+        // the stock change, which is what pulled the balances away from الجرد.
+        ->whereBetween('rr.updated_at', [$from . ' 00:00:00', $to . ' 23:59:59'])
         ->when($hasStores, function ($q) use ($storeIds) {
             return $q->whereIn('oo.store_id', $storeIds);
         })
@@ -2324,11 +2344,16 @@ public function item_movements_report(Request $request) {
     // STEP 3: FACTORY DATA (Optimized: No N+1 Loop Queries)
     // =========================================================================
 
-    // 1. Get Operation Order IDs (Raw DB is fastest here)
-    $operation_order_ids = DB::table('operation_orders')
-        ->whereIn('store_id', $reqStoreIds)
-        ->whereBetween('date', [$fromDate, $toDate])
-        ->pluck('id')->toArray();
+    // Work orders whose stock actually moved inside the window: selected by the
+    // store's confirmation time, not by the order's own date, so the rows shown
+    // here are the same ones the balances above are built from.
+    $operation_order_ids = DB::table('operation_orders as oo')
+        ->join('operation_order_details as d', 'd.operation_order_id', '=', 'oo.id')
+        ->join('operation_order_results as r', 'r.order_details_id', '=', 'd.id')
+        ->whereIn('oo.store_id', $reqStoreIds)
+        ->where('r.store_confirm', 1)
+        ->whereBetween('r.updated_at', [$fromDate . ' 00:00:00', $toDate . ' 23:59:59'])
+        ->distinct()->pluck('oo.id')->toArray();
 
     // 2. Fetch all raw details in bulk
     $to_factory = DB::table('operation_order_details')
