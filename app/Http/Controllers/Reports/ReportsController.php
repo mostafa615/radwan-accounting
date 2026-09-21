@@ -2148,11 +2148,18 @@ private function netStockMovement(array $itemIds, array $storeIds, $from, $to) {
     }
 
     // --- Transfers between stores ----------------------------------------
+    // Accepted lines only. Stock does not move until the receiving store
+    // approves (LoadController@acceptLoad), so counting pending and refused
+    // lines invented movements: an item with one unapproved transfer of 1 and
+    // no stock reported an opening balance of 1 and a movement of -1, while
+    // the sheet was still sitting in the sending store. 23 pending and 53
+    // refused lines across 70 items were being counted this way.
     if ($hasStores) {
         $net -= (float) DB::table('load_details as ld')
             ->join('loads as l', 'l.id', '=', 'ld.load_id')
             ->whereIn('ld.item_id', $itemIds)
             ->whereIn('l.from_id', $storeIds)
+            ->where('ld.status', 'accepted')
             ->whereBetween('l.date', [$from, $to])
             ->sum('ld.quantity');
 
@@ -2160,6 +2167,7 @@ private function netStockMovement(array $itemIds, array $storeIds, $from, $to) {
             ->join('loads as l', 'l.id', '=', 'ld.load_id')
             ->whereIn('ld.item_id', $itemIds)
             ->whereIn('l.to_id', $storeIds)
+            ->where('ld.status', 'accepted')
             ->whereBetween('l.date', [$from, $to])
             ->sum('ld.quantity');
     }
@@ -2279,8 +2287,12 @@ public function item_movements_report(Request $request) {
     $orders_out_return = $orders_in_range->filter(fn($d) => $d->order->is_return == 1 && $d->order->type == 'in');
 
     // --- LOADS (Date Range) ---
+    // Accepted lines only, matching netStockMovement. A pending or refused
+        // transfer has not moved any stock yet, so showing it as a movement made
+        // the displayed rows disagree with the balances underneath them.
     $loads_in_range = LoadDetail::with(['parent', 'item:id,name'])
         ->whereIn('item_id', $reqItems)
+        ->where('status', 'accepted')
         ->whereHas('parent', function ($q) use ($fromDate, $toDate, $hasStores, $reqStoreIds) {
             $q->whereBetween('date', [$fromDate, $toDate]);
             if ($hasStores) {
